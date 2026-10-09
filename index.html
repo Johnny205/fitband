@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#111111">
+<title>OpaskaFit</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+<style>
+  *{box-sizing:border-box}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#111;color:#eee;margin:0;padding:14px 14px 40px}
+  h1{font-size:1.25em;margin:0 0 10px}
+  .karta{background:#1d1d1f;border-radius:12px;padding:14px;margin-bottom:12px}
+  .tytul{color:#999;font-size:.75em;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px}
+  .kat{font-size:3.4em;font-weight:700;text-align:center;line-height:1.1}
+  .male{font-size:.85em;color:#999}
+  .srodek{text-align:center}
+  button{font:inherit;font-weight:600;border:0;border-radius:10px;padding:12px 14px;cursor:pointer}
+  .glowny{width:100%;background:#2f7de1;color:#fff;font-size:1.1em;padding:16px}
+  .glowny.rozlacz{background:#444}
+  .rzad{display:flex;gap:8px;flex-wrap:wrap}
+  .rzad button{flex:1;min-width:120px;background:#333;color:#eee}
+  .rzad button.nagrywa{background:#c62828;color:#fff}
+  .staty{display:flex;gap:8px;margin-top:10px}
+  .staty>div{flex:1;background:#262628;border-radius:10px;padding:10px;text-align:center}
+  .staty b{display:block;font-size:1.5em}
+  .pasek{height:18px;background:#333;border-radius:6px;overflow:hidden;margin:4px 0 8px}
+  .pasek>div{height:100%;width:0%}
+  #scena{width:100%;height:260px;border-radius:10px;overflow:hidden}
+  #wykres{width:100%;height:90px;display:block}
+  .ok{color:#6c6}.err{color:#ef5350}.warn{color:#ffb74d}
+  #brakBT{display:none}
+  #brakBT ol{padding-left:20px;margin:8px 0}
+  input[type=number]{width:64px;background:#262628;color:#eee;border:1px solid #444;border-radius:6px;padding:4px}
+  .ukryte{display:none}
+</style>
+</head>
+<body>
+<h1>OpaskaFit &mdash; test kolana</h1>
+
+<!-- komunikat gdy przegladarka nie obsluguje Bluetooth -->
+<div class="karta" id="brakBT">
+  <div class="tytul">Ta przegladarka nie obsluguje Bluetooth</div>
+  <div id="brakBTtresc"></div>
+</div>
+
+<div class="karta">
+  <button class="glowny" id="btnPolacz">Polacz z opaska</button>
+  <div class="male srodek" id="status" style="margin-top:8px">niepolaczono</div>
+</div>
+
+<div id="panel" class="ukryte">
+  <div class="karta">
+    <div class="tytul">Kat zgiecia kolana</div>
+    <div class="kat" id="kat">&mdash;</div>
+    <div class="male srodek" id="statusimu"></div>
+    <canvas id="wykres"></canvas>
+    <div class="male srodek">ostatnie 10 s</div>
+    <div class="staty">
+      <div><span class="male">min</span><b id="romMin">&mdash;</b></div>
+      <div><span class="male">max</span><b id="romMax">&mdash;</b></div>
+      <div><span class="male">powtorzenia</span><b id="powt">0</b></div>
+    </div>
+    <div class="rzad" style="margin-top:10px">
+      <button id="btnZero">Zeruj (noga prosta)</button>
+      <button id="btnResetStat">Wyczysc min/max/powt.</button>
+    </div>
+    <div class="male" style="margin-top:8px">
+      Powtorzenie liczy sie, gdy kat przekroczy
+      <input type="number" id="prog" value="30" min="5" max="150"> &deg; i wroci ponizej polowy tej wartosci.
+    </div>
+  </div>
+
+  <div class="karta">
+    <div class="tytul">Nagrywanie sesji</div>
+    <div class="rzad">
+      <button id="btnNagraj">Start nagrywania</button>
+      <button id="btnPobierz" disabled>Pobierz CSV</button>
+    </div>
+    <div class="male" id="infoNagr" style="margin-top:8px">brak nagrania</div>
+  </div>
+
+  <div class="karta">
+    <div class="tytul">Noga 3D (niebieski = udo, pomaranczowy = golen)</div>
+    <div id="scena"></div>
+  </div>
+
+  <div class="karta">
+    <div class="tytul">Nacisk FSR (0&ndash;4095)</div>
+    <div class="male">FSR 1: <span id="fsrV1">0</span></div>
+    <div class="pasek"><div id="fsrB1" style="background:#ff7f0e"></div></div>
+    <div class="male">FSR 2: <span id="fsrV2">0</span></div>
+    <div class="pasek"><div id="fsrB2" style="background:#9467bd"></div></div>
+    <div class="male">FSR 3: <span id="fsrV3">0</span></div>
+    <div class="pasek"><div id="fsrB3" style="background:#e377c2"></div></div>
+    <div class="male">FSR 4: <span id="fsrV4">0</span></div>
+    <div class="pasek"><div id="fsrB4" style="background:#17becf"></div></div>
+    <div class="male" id="fsrInfo"></div>
+    <div class="tytul" style="margin-top:12px">Intensywnosc ruchu [m/s&sup2;]</div>
+    <div class="male">udo: <span id="aT">0</span></div>
+    <div class="pasek"><div id="aTB" style="background:#4a90d9"></div></div>
+    <div class="male">golen: <span id="aS">0</span></div>
+    <div class="pasek"><div id="aSB" style="background:#e07b00"></div></div>
+  </div>
+</div>
+
+<div class="male srodek" id="wersja"></div>
+
+<script>
+// ================= stale protokolu (zgodne z firmware esp32_ble) =================
+const UUID_SERWIS = '6f70616b-6669-7400-8000-000000000001';
+const UUID_DANE   = '6f70616b-6669-7400-8000-000000000002';
+const UUID_INFO   = '6f70616b-6669-7400-8000-000000000003';
+const UUID_FSR    = '6f70616b-6669-7400-8000-000000000004';   // od firmware 5.1: 4x FSR
+
+const $ = id => document.getElementById(id);
+
+// ================= wykrywanie obslugi Bluetooth =================
+const jestBT = !!(navigator.bluetooth && navigator.bluetooth.requestDevice);
+const iOS = /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+            (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+if (!jestBT) {
+  $('brakBT').style.display = 'block';
+  $('btnPolacz').disabled = true;
+  $('btnPolacz').style.opacity = .4;
+  $('brakBTtresc').innerHTML = iOS
+    ? '<ol><li>Zainstaluj darmowa przegladarke <b>Bluefy</b> z App Store.</li>' +
+      '<li>Otworz w niej ten sam adres strony.</li>' +
+      '<li>Kliknij <b>Polacz z opaska</b>.</li></ol>' +
+      '<div class="male">Safari na iPhonie nie pozwala stronom korzystac z Bluetooth.</div>'
+    : '<ol><li>Otworz ta strone w przegladarce <b>Google Chrome</b>.</li>' +
+      '<li>Wlacz Bluetooth i lokalizacje w telefonie.</li></ol>';
+}
+
+// ================= matematyka orientacji =================
+// Euler (yaw, pitch, roll w stopniach, kolejnosc Z-Y-X) -> kwaternion [w, x, y, z]
+function euler2q(y, p, r) {
+  const d = Math.PI / 360; // stopnie -> radiany i polowa kata
+  const cy = Math.cos(y*d), sy = Math.sin(y*d), cp = Math.cos(p*d), sp = Math.sin(p*d),
+        cr = Math.cos(r*d), sr = Math.sin(r*d);
+  return [cr*cp*cy + sr*sp*sy, sr*cp*cy - cr*sp*sy, cr*sp*cy + sr*cp*sy, cr*cp*sy - sr*sp*cy];
+}
+// iloczyn kwaternionow i sprzezenie
+function qmul(a, b) {
+  return [a[0]*b[0]-a[1]*b[1]-a[2]*b[2]-a[3]*b[3],
+          a[0]*b[1]+a[1]*b[0]+a[2]*b[3]-a[3]*b[2],
+          a[0]*b[2]-a[1]*b[3]+a[2]*b[0]+a[3]*b[1],
+          a[0]*b[3]+a[1]*b[2]-a[2]*b[1]+a[3]*b[0]];
+}
+const qconj = q => [q[0], -q[1], -q[2], -q[3]];
+// kat miedzy dwiema orientacjami (stopnie)
+function katQ(a, b) {
+  const d = Math.min(1, Math.abs(a[0]*b[0]+a[1]*b[1]+a[2]*b[2]+a[3]*b[3]));
+  return 2 * Math.acos(d) * 180 / Math.PI;
+}
+
+// ================= stan =================
+let urzadzenie = null, chDane = null, chFsr = null;
+let fsr = [0, 0, 0, 0], fsrSeq = null, ostatniWiersz = null, ostatniWierszSeq = null, maFsr4 = false;
+let qZero = [1, 0, 0, 0];          // orientacja wzgledna golen-udo przy wyprostowanej nodze
+let ostatniQrel = null;
+let romMin = null, romMax = null, powt = 0, wGorze = false;
+let historia = [];                 // ~10 s przy 50 Hz
+let nagrywa = false, nagranie = [], startNagr = 0;
+let ostDom = 0, pakiety = 0, okno = performance.now(), hz = 0;
+let ostatniSeq = null, zgubione = 0;
+let wakeLock = null;
+
+// ================= Bluetooth =================
+$('btnPolacz').onclick = async () => {
+  if (urzadzenie && urzadzenie.gatt.connected) { rozlacz(); return; }
+  try {
+    $('status').textContent = 'wybierz opaske z listy...';
+    urzadzenie = await navigator.bluetooth.requestDevice({
+      filters: [{ namePrefix: 'OpaskaFit' }, { services: [UUID_SERWIS] }],
+      optionalServices: [UUID_SERWIS]
+    });
+    urzadzenie.addEventListener('gattserverdisconnected', poRozlaczeniu);
+    await polacz();
+  } catch (e) {
+    $('status').innerHTML = '<span class="err">' + (e.name === 'NotFoundError' ? 'nie wybrano opaski' : e.message) + '</span>';
+  }
+};
+
+async function polacz() {
+  $('status').textContent = 'laczenie z ' + urzadzenie.name + '...';
+  const serwer = await urzadzenie.gatt.connect();
+  const serwis = await serwer.getPrimaryService(UUID_SERWIS);
+  try {
+    const info = await (await serwis.getCharacteristic(UUID_INFO)).readValue();
+    const j = JSON.parse(new TextDecoder().decode(info));
+    $('wersja').textContent = j.nazwa + ' · firmware ' + j.fw;
+  } catch (_) {}
+  chDane = await serwis.getCharacteristic(UUID_DANE);
+  chDane.addEventListener('characteristicvaluechanged', naDane);  // ta sama funkcja = brak duplikatow po ponownym polaczeniu
+  await chDane.startNotifications();
+  // charakterystyka z 4 FSR istnieje od firmware 5.1; starsza opaska jej nie ma - wtedy zostaje tylko FSR1 z pakietu glownego
+  maFsr4 = false; chFsr = null;
+  try {
+    chFsr = await serwis.getCharacteristic(UUID_FSR);
+    chFsr.addEventListener('characteristicvaluechanged', naFsr);
+    await chFsr.startNotifications();
+    maFsr4 = true;
+  } catch (_) { chFsr = null; }
+  $('fsrInfo').textContent = maFsr4 ? '' : 'ta wersja firmware wysyla tylko FSR 1';
+  $('status').innerHTML = '<span class="ok">polaczono: ' + urzadzenie.name + '</span>';
+  $('btnPolacz').textContent = 'Rozlacz';
+  $('btnPolacz').classList.add('rozlacz');
+  $('panel').classList.remove('ukryte');
+  try { wakeLock = await navigator.wakeLock.request('screen'); } catch (_) {}  // ekran nie gasnie
+  if (window.zmienRozmiar3D) zmienRozmiar3D();
+}
+
+function rozlacz() {
+  if (urzadzenie) { urzadzenie.removeEventListener('gattserverdisconnected', poRozlaczeniu); urzadzenie.gatt.disconnect(); }
+  stanRozlaczony('rozlaczono');
+}
+
+async function poRozlaczeniu() {
+  // nieplanowane zerwanie (np. odejscie za daleko) - probujemy wrocic sami
+  stanRozlaczony('polaczenie zerwane - ponawiam...');
+  for (let i = 0; i < 5; i++) {
+    await new Promise(r => setTimeout(r, 1500));
+    try { await polacz(); return; } catch (_) {}
+  }
+  stanRozlaczony('polaczenie zerwane - kliknij "Polacz z opaska"');
+}
+
+function stanRozlaczony(tekst) {
+  $('status').innerHTML = '<span class="warn">' + tekst + '</span>';
+  $('btnPolacz').textContent = 'Polacz z opaska';
+  $('btnPolacz').classList.remove('rozlacz');
+  if (wakeLock) { wakeLock.release().catch(()=>{}); wakeLock = null; }
+}
+
+function naDane(e) { obsluzPakiet(e.target.value); }
+
+// pakiet FSR (10 B): [0] numer kolejny, [1] zarezerwowane, [2..9] FSR1..FSR4 (uint16, little-endian)
+function naFsr(e) {
+  const dv = e.target.value;
+  if (dv.byteLength < 10) return;
+  fsrSeq = dv.getUint8(0);
+  for (let i = 0; i < 4; i++) fsr[i] = dv.getUint16(2 + 2 * i, true);
+  // pakiet FSR przychodzi zaraz po glownym z tym samym numerem - dopisz do ostatniego wiersza nagrania
+  if (nagrywa && ostatniWiersz && ostatniWierszSeq === fsrSeq) {
+    ostatniWiersz[IDX_FSR] = fsr[0]; ostatniWiersz[IDX_FSR + 1] = fsr[1];
+    ostatniWiersz[IDX_FSR + 2] = fsr[2]; ostatniWiersz[IDX_FSR + 3] = fsr[3];
+  }
+}
+const IDX_FSR = 10;   // pozycja kolumny fsr1 w wierszu nagrania
+
+// ================= dekodowanie pakietu (20 B, little-endian) =================
+function obsluzPakiet(dv) {
+  if (dv.byteLength < 20) return;
+  const seq = dv.getUint8(0), flagi = dv.getUint8(1);
+  if (ostatniSeq !== null) zgubione += ((seq - ostatniSeq - 1) & 0xFF);
+  ostatniSeq = seq;
+  const s16 = o => dv.getInt16(o, true);
+  const d = {
+    udoOk: !!(flagi & 1), golenOk: !!(flagi & 2),
+    udo:   [s16(2)/100, s16(4)/100, s16(6)/100],     // yaw, pitch, roll
+    golen: [s16(8)/100, s16(10)/100, s16(12)/100],
+    accU: dv.getUint16(14, true)/100, accG: dv.getUint16(16, true)/100,
+    fsr1: dv.getUint16(18, true)
+  };
+  pakiety++;
+  if (!maFsr4) fsr[0] = d.fsr1;   // stary firmware: tylko FSR1 z pakietu glownego
+
+  const qU = euler2q(...d.udo), qG = euler2q(...d.golen);
+  if (window.ustaw3D) ustaw3D(qU, qG);
+
+  let kat = null;
+  if (d.udoOk && d.golenOk) {
+    ostatniQrel = qmul(qconj(qU), qG);       // orientacja goleni wzgledem uda
+    kat = katQ(ostatniQrel, qZero);           // odchylenie od pozycji "zero"
+    historia.push(kat); if (historia.length > 500) historia.shift();
+    romMin = romMin === null ? kat : Math.min(romMin, kat);
+    romMax = romMax === null ? kat : Math.max(romMax, kat);
+    const prog = +$('prog').value || 30;
+    if (!wGorze && kat > prog) wGorze = true;
+    else if (wGorze && kat < prog / 2) { wGorze = false; powt++; }
+  }
+
+  if (nagrywa) {
+    // kolumny: czas, kat, udo(3), golen(3), ruch udo, ruch golen, fsr1..fsr4, udo_ok, golen_ok
+    ostatniWiersz = [Math.round(performance.now() - startNagr), kat === null ? '' : kat.toFixed(2),
+      ...d.udo, ...d.golen, d.accU, d.accG, d.fsr1, '', '', '',
+      d.udoOk ? 1 : 0, d.golenOk ? 1 : 0];
+    ostatniWierszSeq = seq;
+    nagranie.push(ostatniWiersz);
+  }
+
+  const teraz = performance.now();
+  if (teraz - okno >= 1000) { hz = pakiety; pakiety = 0; okno = teraz; }
+  if (teraz - ostDom < 60) return;   // ekran odswiezamy ~15x/s
+  ostDom = teraz;
+
+  if (kat !== null) {
+    $('kat').textContent = kat.toFixed(1) + '°';
+    $('statusimu').innerHTML = '<span class="ok">oba czujniki OK</span> · ' + hz + ' Hz' + (zgubione ? ' · zgubione: ' + zgubione : '');
+  } else {
+    $('kat').textContent = '—';
+    $('statusimu').innerHTML = '<span class="err">czujnik: udo ' + (d.udoOk ? 'OK' : 'BRAK') + ' · golen ' + (d.golenOk ? 'OK' : 'BRAK') + '</span>';
+  }
+  $('romMin').textContent = romMin === null ? '—' : romMin.toFixed(0) + '°';
+  $('romMax').textContent = romMax === null ? '—' : romMax.toFixed(0) + '°';
+  $('powt').textContent = powt;
+  for (let i = 0; i < 4; i++) {
+    $('fsrV' + (i + 1)).textContent = fsr[i];
+    $('fsrB' + (i + 1)).style.width = (fsr[i] / 4095 * 100) + '%';
+  }
+  $('aT').textContent = d.accU.toFixed(2); $('aTB').style.width = Math.min(100, d.accU / 20 * 100) + '%';
+  $('aS').textContent = d.accG.toFixed(2); $('aSB').style.width = Math.min(100, d.accG / 20 * 100) + '%';
+  if (nagrywa) $('infoNagr').textContent = 'nagrywanie: ' + ((teraz - startNagr) / 1000).toFixed(0) + ' s, ' + nagranie.length + ' probek';
+  rysujWykres();
+}
+
+// ================= przyciski =================
+$('btnZero').onclick = () => {
+  if (!ostatniQrel) { alert('Brak danych z obu czujnikow.'); return; }
+  qZero = ostatniQrel.slice();
+  historia = []; romMin = romMax = null; powt = 0; wGorze = false;
+};
+$('btnResetStat').onclick = () => { romMin = romMax = null; powt = 0; wGorze = false; };
+
+$('btnNagraj').onclick = () => {
+  if (!nagrywa) {
+    nagranie = []; startNagr = performance.now(); nagrywa = true;
+    $('btnNagraj').textContent = 'Stop nagrywania'; $('btnNagraj').classList.add('nagrywa');
+    $('btnPobierz').disabled = true;
+  } else {
+    nagrywa = false;
+    $('btnNagraj').textContent = 'Start nagrywania'; $('btnNagraj').classList.remove('nagrywa');
+    $('btnPobierz').disabled = nagranie.length === 0;
+    $('infoNagr').textContent = 'nagranie gotowe: ' + nagranie.length + ' probek (' +
+      ((nagranie.length ? nagranie[nagranie.length-1][0] : 0) / 1000).toFixed(0) + ' s)';
+  }
+};
+
+$('btnPobierz').onclick = async () => {
+  const naglowek = 'czas_ms;kat_kolana_st;udo_yaw;udo_pitch;udo_roll;golen_yaw;golen_pitch;golen_roll;' +
+                   'ruch_udo_ms2;ruch_golen_ms2;fsr1;fsr2;fsr3;fsr4;udo_ok;golen_ok';
+  // srednik + przecinek dziesietny = Excel w polskiej wersji otwiera bez kombinowania
+  const csv = naglowek + '\n' + nagranie.map(r => r.map(v => String(v).replace('.', ',')).join(';')).join('\n');
+  const nazwa = 'opaskafit_' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.csv';
+  const plik = new File(['﻿' + csv], nazwa, { type: 'text/csv' });
+  // na telefonie najwygodniej "Udostepnij" (mail, WhatsApp, Pliki); jesli brak - zwykle pobranie
+  if (navigator.canShare && navigator.canShare({ files: [plik] })) {
+    try { await navigator.share({ files: [plik], title: nazwa }); return; } catch (_) {}
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(plik); a.download = nazwa; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+};
+
+// ================= wykres kata =================
+const wk = $('wykres'), wctx = wk.getContext('2d');
+function rysujWykres() {
+  const W = wk.width = wk.clientWidth * devicePixelRatio, H = wk.height = 90 * devicePixelRatio;
+  wctx.clearRect(0, 0, W, H);
+  wctx.strokeStyle = '#333'; wctx.lineWidth = 1;
+  for (const k of [45, 90, 135]) { const y = H - k / 180 * H; wctx.beginPath(); wctx.moveTo(0, y); wctx.lineTo(W, y); wctx.stroke(); }
+  wctx.strokeStyle = '#e07b00'; wctx.lineWidth = 2 * devicePixelRatio; wctx.beginPath();
+  historia.forEach((v, i) => { const x = i / 499 * W, y = H - Math.min(180, v) / 180 * H; i ? wctx.lineTo(x, y) : wctx.moveTo(x, y); });
+  wctx.stroke();
+}
+
+// ================= 3D (opcjonalne - strona dziala tez bez three.js) =================
+if (window.THREE) {
+  const el = $('scena');
+  const scena = new THREE.Scene(); scena.background = new THREE.Color(0x1d1d1f);
+  const kamera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+  kamera.position.set(2.6, 0.6, 4.2); kamera.lookAt(0, 0, 0);
+  const render = new THREE.WebGLRenderer({ antialias: true });
+  render.setPixelRatio(devicePixelRatio);
+  el.appendChild(render.domElement);
+  scena.add(new THREE.AmbientLight(0xffffff, 0.6));
+  const sw = new THREE.DirectionalLight(0xffffff, 0.8); sw.position.set(3, 5, 4); scena.add(sw);
+  const segment = kolor => {
+    const g = new THREE.Group();
+    g.add(new THREE.Mesh(new THREE.BoxGeometry(0.45, 1.7, 0.28), new THREE.MeshStandardMaterial({ color: kolor })));
+    const nos = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.3), new THREE.MeshStandardMaterial({ color: 0xffffff }));
+    nos.position.set(0, 0.6, 0.28); g.add(nos);
+    return g;
+  };
+  const mU = segment(0x4a90d9); mU.position.y = 1.05; scena.add(mU);
+  const mG = segment(0xe07b00); mG.position.y = -1.05; scena.add(mG);
+  const siatka = new THREE.GridHelper(6, 12, 0x444444, 0x2a2a2a); siatka.position.y = -2.2; scena.add(siatka);
+  const celU = new THREE.Quaternion(), celG = new THREE.Quaternion();
+  window.ustaw3D = (qU, qG) => { celU.set(qU[1], qU[2], qU[3], qU[0]); celG.set(qG[1], qG[2], qG[3], qG[0]); };
+  window.zmienRozmiar3D = () => { const w = el.clientWidth || 300; render.setSize(w, 260); kamera.aspect = w / 260; kamera.updateProjectionMatrix(); };
+  addEventListener('resize', zmienRozmiar3D);
+  (function anim() {
+    requestAnimationFrame(anim);
+    mU.quaternion.slerp(celU, 0.35); mG.quaternion.slerp(celG, 0.35);
+    render.render(scena, kamera);
+  })();
+} else {
+  $('scena').innerHTML = '<div class="male srodek" style="padding:40px 10px">wizualizacja 3D niedostepna (brak internetu)</div>';
+}
+</script>
+</body>
+</html>
