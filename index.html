@@ -32,6 +32,7 @@
   #brakBT{display:none}
   #brakBT ol{padding-left:20px;margin:8px 0}
   input[type=number]{width:64px;background:#262628;color:#eee;border:1px solid #444;border-radius:6px;padding:4px}
+  .kalinstr{margin:8px 0;line-height:1.4}
   .ukryte{display:none}
 </style>
 </head>
@@ -62,13 +63,25 @@
       <div><span class="male">powtorzenia</span><b id="powt">0</b></div>
     </div>
     <div class="rzad" style="margin-top:10px">
-      <button id="btnZero">Zeruj (noga prosta)</button>
+      <button id="btnZero">Zeruj kat (noga prosta)</button>
       <button id="btnResetStat">Wyczysc min/max/powt.</button>
     </div>
     <div class="male" style="margin-top:8px">
       Powtorzenie liczy sie, gdy kat przekroczy
       <input type="number" id="prog" value="30" min="5" max="150"> &deg; i wroci ponizej polowy tej wartosci.
     </div>
+  </div>
+
+  <div class="karta" id="kartaKal">
+    <div class="tytul">Kalibracja czujnikow (ulozenie na nodze)</div>
+    <div class="kalinstr" id="kalTekst"></div>
+    <div class="pasek" id="kalPasekObr"><div id="kalPasek" style="background:#2f7de1"></div></div>
+    <div class="rzad">
+      <button id="btnKal">Kalibruj czujniki</button>
+      <button id="btnKalDalej" class="ukryte">Gotowe</button>
+      <button id="btnKalAnuluj" class="ukryte">Anuluj</button>
+    </div>
+    <div class="male" style="margin-top:8px">Po kazdym wlaczeniu opaski (zasilaniu) kalibracje trzeba powtorzyc - zajmuje ok. 30 s. Czujniki same sie potem zgrywaja, gdy stoisz prosto i nieruchomo.</div>
   </div>
 
   <div class="karta">
@@ -154,6 +167,197 @@ function katQ(a, b) {
   return 2 * Math.acos(d) * 180 / Math.PI;
 }
 
+// ==== KALIBRACJA START ====
+// Wspolny uklad ciala F: X = lewa strona, Y = gora, Z = przod (jak w modelu 3D; nos modelu jest na +Z).
+// Kwaterniony [w,x,y,z]. Swiat czujnika BNO055: Z = gora (os pionowa), kierunek poziomy dowolny i inny w kazdym czujniku.
+const KAL = (() => {
+  const qmul = (a, b) => [
+    a[0]*b[0]-a[1]*b[1]-a[2]*b[2]-a[3]*b[3],
+    a[0]*b[1]+a[1]*b[0]+a[2]*b[3]-a[3]*b[2],
+    a[0]*b[2]-a[1]*b[3]+a[2]*b[0]+a[3]*b[1],
+    a[0]*b[3]+a[1]*b[2]-a[2]*b[1]+a[3]*b[0]];
+  const qconj = q => [q[0], -q[1], -q[2], -q[3]];
+  const qnorm = q => { const n = Math.hypot(q[0], q[1], q[2], q[3]) || 1; return [q[0]/n, q[1]/n, q[2]/n, q[3]/n]; };
+  const qos = (os, kat) => { const s = Math.sin(kat / 2); return [Math.cos(kat / 2), os[0]*s, os[1]*s, os[2]*s]; };
+  const Ry = kat => qos([0, 1, 0], kat), Rz = kat => qos([0, 0, 1], kat);
+  const P = qos([1, 0, 0], Math.PI / 2);                 // F -> "swiat Z-gora": X->x, Y->z (gora), Z->-y
+  const wekObrotu = q => {                               // os*kat, kat w [-pi, pi]
+    let [w, x, y, z] = qnorm(q); if (w < 0) { w = -w; x = -x; y = -y; z = -z; }
+    const s = Math.hypot(x, y, z); if (s < 1e-9) return [0, 0, 0];
+    const k = 2 * Math.atan2(s, w); return [x / s * k, y / s * k, z / s * k];
+  };
+  const skretY = q => 2 * Math.atan2(q[2], q[0]);        // skret wokol osi Y (pionu ciala); q z w >= 0 -> kat w (-pi, pi]
+  const poz = q => (q[0] < 0 ? [-q[0], -q[1], -q[2], -q[3]] : q);
+  // obrot wzgledem pozy zerowej, wyrazony w swiecie czujnika. konw 'A': q = czujnik->swiat; 'B': q = swiat->czujnik
+  const dyn = (c, q, q0) => (c === 'A' ? qmul(q, qconj(q0)) : qmul(qconj(q), q0));
+
+  // glowna os obrotu (analiza glownych skladowych wektorow obrotu) + jaka czesc wariancji tlumaczy
+  function osGlowna(rv) {
+    const C = [[0,0,0],[0,0,0],[0,0,0]]; let slad = 0, maks = [0,0,0], mm = 0;
+    for (const r of rv) {
+      for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) C[i][j] += r[i] * r[j];
+      slad += r[0]*r[0] + r[1]*r[1] + r[2]*r[2];
+      const n = Math.hypot(r[0], r[1], r[2]); if (n > mm) { mm = n; maks = r; }
+    }
+    let a = mm > 0 ? maks.map(v => v / mm) : [1, 0, 0];
+    for (let it = 0; it < 60; it++) {
+      const b = [0,1,2].map(i => C[i][0]*a[0] + C[i][1]*a[1] + C[i][2]*a[2]);
+      const n = Math.hypot(b[0], b[1], b[2]) || 1; a = b.map(v => v / n);
+    }
+    const lam = [0,1,2].reduce((s, i) => s + a[i] * (C[i][0]*a[0] + C[i][1]*a[1] + C[i][2]*a[2]), 0);
+    return { a, wyjasnia: slad > 0 ? lam / slad : 0, maxKat: mm };
+  }
+
+  // probki: [{u:[w,x,y,z], g:[...]}] podczas wymachow; q0U/q0G: poza zerowa (stoje prosto)
+  function kalibruj(probki, q0U, q0G) {
+    if (probki.length < 60) return { ok: false, blad: 'za malo danych - wykonaj dluzszy ruch' };
+    const wyn = {};
+    for (const c of ['A', 'B']) {
+      const rvU = probki.map(p => wekObrotu(dyn(c, p.u, q0U))), rvG = probki.map(p => wekObrotu(dyn(c, p.g, q0G)));
+      const U = osGlowna(rvU), G = osGlowna(rvG);
+      wyn[c] = { rvU, rvG, U, G, wynik: Math.abs(U.a[2]) + Math.abs(G.a[2]) };   // poprawna konwencja = os pozioma (skladowa Z ~ 0)
+    }
+    const c = wyn.A.wynik <= wyn.B.wynik ? 'A' : 'B', W = wyn[c];
+    const gradU = W.U.maxKat * 180 / Math.PI, gradG = W.G.maxKat * 180 / Math.PI;
+    if (gradU < 12 || gradG < 12) return { ok: false, blad: 'ruch za maly (udo ' + gradU.toFixed(0) + '°, golen ' + gradG.toFixed(0) + '°) - zrob wieksze wymachy' };
+    if (W.U.wyjasnia < 0.8 || W.G.wyjasnia < 0.8) return { ok: false, blad: 'ruch nie byl wymachem w jednej plaszczyznie - wymachuj noga prosto przod-tyl' };
+    if (Math.abs(W.U.a[2]) > 0.35 || Math.abs(W.G.a[2]) > 0.35) return { ok: false, blad: 'os ruchu nie jest pozioma - czy noga byla prosta i stales prosto?' };
+    let aU = W.U.a.slice(), aG = W.G.a.slice();
+    // znak: pierwszy wyrazny ruch uda ma byc do przodu (= dodatni obrot wokol L = -X ciala)
+    for (let k = 0; k < probki.length; k++) {
+      const s = W.rvU[k][0]*aU[0] + W.rvU[k][1]*aU[1] + W.rvU[k][2]*aU[2];
+      if (Math.abs(s) > 0.14) { if (s < 0) aU = aU.map(v => -v); break; }
+    }
+    // golen: znak taki, zeby ruch byl zgodny z udem (noga prosta -> obie czesci obracaja sie razem)
+    let kor = 0;
+    for (let k = 0; k < probki.length; k++)
+      kor += (W.rvU[k][0]*aU[0] + W.rvU[k][1]*aU[1] + W.rvU[k][2]*aU[2]) * (W.rvG[k][0]*aG[0] + W.rvG[k][1]*aG[1] + W.rvG[k][2]*aG[2]);
+    if (kor < 0) aG = aG.map(v => -v);
+    const M = a => qmul(Rz(Math.atan2(-a[1], -a[0])), P);   // F -> swiat czujnika (X ciala = -a)
+    return {
+      ok: true,
+      kal: { c, q0U: q0U.slice(), q0G: q0G.slice(), MU: M(aU), MG: M(aG), delta: 0, offset: 0 },
+      info: { konwencja: c, gradU, gradG, wyjasniaU: W.U.wyjasnia, wyjasniaG: W.G.wyjasnia, poziomU: Math.asin(Math.min(1, Math.abs(W.U.a[2]))) * 180 / Math.PI, poziomG: Math.asin(Math.min(1, Math.abs(W.G.a[2]))) * 180 / Math.PI }
+    };
+  }
+
+  // orientacje udo/golen w ukladzie ciala F + kat kolana (stopnie, dodatni = zgiecie)
+  function zastosuj(kal, qU, qG) {
+    const R = (q, q0, M) => qnorm(qmul(qmul(qconj(M), dyn(kal.c, q, q0)), M));
+    const RT = R(qU, kal.q0U, kal.MU);
+    const RS = qnorm(qmul(Ry(-kal.delta), R(qG, kal.q0G, kal.MG)));     // korekta dryfu yaw golenia wzgledem uda
+    const H = poz(qnorm(qmul(qconj(RT), RS)));
+    const kat = 2 * Math.atan2(H[1], H[0]) * 180 / Math.PI;               // skret wokol X = zgiecie kolana
+    const tau = skretY(poz(RT));                                          // obrot calego ciala wokol pionu - zdejmujemy, model patrzy do kamery
+    const Rd = Ry(-tau);
+    return { RT, RS, H, kat, RTd: qmul(Rd, RT), RSd: qmul(Rd, RS), skretY: skretY(H) };
+  }
+
+  // znak (przod/tyl): kolano zgina sie tylko pieta w strone posladka, wiec przy zginaniu kolana kat ma wyjsc dodatni.
+  // probki: ruch zginania kolana (stojac, udo w miejscu). Zwraca nowy obiekt kal (ewentualnie odwrocony).
+  function ustawZnak(kal, probki) {
+    let mn = 0, mx = 0;
+    for (const p of probki) { const w = zastosuj(kal, p.u, p.g); mn = Math.min(mn, w.kat); mx = Math.max(mx, w.kat); }
+    const amp = Math.max(-mn, mx);
+    if (probki.length < 40 || amp < 20) return { ok: false, blad: 'zginanie kolana za male (' + amp.toFixed(0) + '\u00B0) - zegnij kolano mocniej (pieta do posladka)' };
+    if (-mn > mx) { const k = JSON.parse(JSON.stringify(kal)); k.MU = qmul(k.MU, Ry(Math.PI)); k.MG = qmul(k.MG, Ry(Math.PI)); return { ok: true, kal: k, odwrocono: true, amp }; }
+    return { ok: true, kal, odwrocono: false, amp };
+  }
+
+  // automatyczne zgranie yaw: gdy stoisz prosto i nieruchomo, oba czujniki musza byc zgodne
+  function autoSync(kal, st, w, accU, accG, dt) {
+    const prosto = Math.abs(w.kat) < 8 && Math.abs(w.skretY) < 0.45 && accU < 0.5 && accG < 0.5;
+    st.stoi = prosto ? st.stoi + dt : 0;
+    if (st.stoi > 0.8) {
+      kal.delta += 0.03 * w.skretY;      // ~ staly czas 0,7 s przy 50 Hz
+      return true;
+    }
+    return false;
+  }
+  return { qmul, qconj, qnorm, qos, Ry, Rz, P, kalibruj, ustawZnak, zastosuj, autoSync, dyn, wekObrotu, skretY, poz };
+})();
+// ==== KALIBRACJA KONIEC ====
+
+// ================= kreator kalibracji =================
+let kal = null;                    // wynik kalibracji (null = brak -> stary tryb, model 3D moze byc przekrzywiony)
+const kalSync = { stoi: 0 };
+let katSurowy = null;              // ostatni kat kolana ze skalibrowanego trybu (przed odjeciem zera)
+let kalEtap = 0;                   // 0 = brak, 1 = stoj prosto, 2 = wymachy prosta noga, 3 = zginanie kolana
+let kalLicz = 0, kalRef = null, kalQ0 = null, kalProbki = [], kalKal = null, kalInfo = null;
+let kalMaxU = 0, kalMaxG = 0, kalMaxKat = 0, kalBlad = '', kalPodsumowanie = '';
+const KAL_STOI_N = 100;            // ok. 2 s nieruchomo przy 50 Hz
+
+function kalStart() {
+  kalEtap = 1; kalLicz = 0; kalRef = null; kalProbki = []; kalKal = null; kalInfo = null;
+  kalMaxU = kalMaxG = kalMaxKat = 0; kalBlad = ''; kalPodsumowanie = '';
+  odswiezKalUI();
+}
+function kalAnuluj() { kalEtap = 0; kalProbki = []; kalKal = null; kalBlad = ''; odswiezKalUI(); }
+
+// wywolywane dla kazdego pakietu, gdy oba czujniki odpowiadaja
+function kalKrok(qU, qG, d) {
+  if (kalEtap === 1) {
+    const spokojnie = d.accU < 0.8 && d.accG < 0.8;
+    if (!kalRef || !spokojnie || katQ(qU, kalRef.u) > 3 || katQ(qG, kalRef.g) > 3) { kalRef = spokojnie ? { u: qU, g: qG } : null; kalLicz = 0; return; }
+    if (++kalLicz >= KAL_STOI_N) { kalQ0 = { u: qU, g: qG }; kalEtap = 2; kalProbki = []; kalMaxU = kalMaxG = 0; }
+  } else if (kalEtap === 2) {
+    kalProbki.push({ u: qU, g: qG }); if (kalProbki.length > 3000) kalProbki.shift();
+    kalMaxU = Math.max(kalMaxU, katQ(qU, kalQ0.u)); kalMaxG = Math.max(kalMaxG, katQ(qG, kalQ0.g));
+  } else if (kalEtap === 3) {
+    kalProbki.push({ u: qU, g: qG }); if (kalProbki.length > 3000) kalProbki.shift();
+    kalMaxKat = Math.max(kalMaxKat, Math.abs(KAL.zastosuj(kalKal, qU, qG).kat));
+  }
+}
+
+function kalDalej() {
+  if (kalEtap === 2) {
+    const kk = KAL.kalibruj(kalProbki, kalQ0.u, kalQ0.g);
+    if (!kk.ok) { kalBlad = kk.blad; kalProbki = []; kalMaxU = kalMaxG = 0; return; }   // zostajemy w kroku 2: nowe nagranie
+    kalKal = kk.kal; kalInfo = kk.info; kalEtap = 3; kalProbki = []; kalMaxKat = 0; kalBlad = '';
+  } else if (kalEtap === 3) {
+    const zn = KAL.ustawZnak(kalKal, kalProbki);
+    if (!zn.ok) { kalBlad = zn.blad; kalProbki = []; kalMaxKat = 0; return; }
+    kal = zn.kal; kal.offset = 0; kalSync.stoi = 0; kalEtap = 0; kalBlad = '';
+    kalPodsumowanie = 'wymachy: udo ' + kalInfo.gradU.toFixed(0) + '\u00B0, golen ' + kalInfo.gradG.toFixed(0) +
+      '\u00B0 \u00B7 zgiecie kolana ' + zn.amp.toFixed(0) + '\u00B0 \u00B7 jakosc osi ' + Math.round(Math.min(kalInfo.wyjasniaU, kalInfo.wyjasniaG) * 100) + '%';
+    historia = []; romMin = romMax = null; powt = 0; wGorze = false;
+  }
+  odswiezKalUI();
+}
+
+function odswiezKalUI() {
+  const t = $('kalTekst'), p = $('kalPasek'), po = $('kalPasekObr');
+  let tekst = '', pasek = 0;
+  if (kalEtap === 1) {
+    tekst = '<b>Krok 1/3.</b> Stan prosto, nogi razem, kolana wyprostowane. Nie ruszaj sie ok. 2 s.';
+    pasek = kalLicz / KAL_STOI_N;
+  } else if (kalEtap === 2) {
+    const ok = kalMaxU >= 15 && kalMaxG >= 15 && kalProbki.length >= 150;
+    tekst = '<b>Krok 2/3.</b> Trzymajac sie czegos wykonaj 3-4 powolne wymachy <b>WYPROSTOWANA</b> noga w przod i w tyl (ok. 30&deg;). Kolano caly czas proste. Potem kliknij <b>Gotowe</b>.' +
+      '<br><span class="male">ruch: udo ' + kalMaxU.toFixed(0) + '&deg;, golen ' + kalMaxG.toFixed(0) + '&deg; (potrzeba min. 15&deg;)</span>';
+    pasek = Math.min(kalMaxU, kalMaxG) / 20;
+    $('btnKalDalej').disabled = !ok;
+  } else if (kalEtap === 3) {
+    const ok = kalMaxKat >= 25 && kalProbki.length >= 100;
+    tekst = '<b>Krok 3/3.</b> Zegnij kolano (pieta do posladka) 3 razy &mdash; stojac albo siedzac, udo w miejscu. Potem kliknij <b>Gotowe</b>.' +
+      '<br><span class="male">zgiecie: ' + kalMaxKat.toFixed(0) + '&deg; (potrzeba min. 25&deg;)</span>';
+    pasek = kalMaxKat / 30;
+    $('btnKalDalej').disabled = !ok;
+  } else if (kal) {
+    tekst = '<span class="ok">Skalibrowano.</span> Model 3D i kat kolana uzywaja kalibracji.' + (kalPodsumowanie ? '<br><span class="male">' + kalPodsumowanie + '</span>' : '');
+  } else {
+    tekst = '<span class="warn">Brak kalibracji</span> - model 3D moze byc przekrzywiony. Kliknij <b>Kalibruj czujniki</b> (ok. 30 s).';
+  }
+  if (kalBlad) tekst += '<br><span class="err">' + kalBlad + '</span>';
+  if (t.innerHTML !== tekst) t.innerHTML = tekst;
+  p.style.width = Math.min(100, pasek * 100) + '%';
+  po.style.display = kalEtap ? '' : 'none';
+  $('btnKal').textContent = kal ? 'Kalibruj ponownie' : 'Kalibruj czujniki';
+  $('btnKal').classList.toggle('ukryte', !!kalEtap);
+  $('btnKalDalej').classList.toggle('ukryte', kalEtap < 2);
+  $('btnKalAnuluj').classList.toggle('ukryte', !kalEtap);
+}
+
 // ================= stan =================
 let urzadzenie = null, chDane = null, chFsr = null;
 let fsr = [0, 0, 0, 0], fsrSeq = null, ostatniWiersz = null, ostatniWierszSeq = null, maFsr4 = false;
@@ -176,6 +380,7 @@ $('btnPolacz').onclick = async () => {
       optionalServices: [UUID_SERWIS]
     });
     urzadzenie.addEventListener('gattserverdisconnected', poRozlaczeniu);
+    kal = null; kalEtap = 0; katSurowy = null; kalPodsumowanie = '';   // nowa sesja = nowa kalibracja
     await polacz();
   } catch (e) {
     $('status').innerHTML = '<span class="err">' + (e.name === 'NotFoundError' ? 'nie wybrano opaski' : e.message) + '</span>';
@@ -267,12 +472,20 @@ function obsluzPakiet(dv) {
   if (!maFsr4) fsr[0] = d.fsr1;   // stary firmware: tylko FSR1 z pakietu glownego
 
   const qU = euler2q(...d.udo), qG = euler2q(...d.golen);
-  if (window.ustaw3D) ustaw3D(qU, qG);
-
+  let qWyswU = qU, qWyswG = qG;     // co pokazac w modelu 3D
   let kat = null;
   if (d.udoOk && d.golenOk) {
-    ostatniQrel = qmul(qconj(qU), qG);       // orientacja goleni wzgledem uda
-    kat = katQ(ostatniQrel, qZero);           // odchylenie od pozycji "zero"
+    ostatniQrel = qmul(qconj(qU), qG);       // orientacja goleni wzgledem uda (tryb bez kalibracji)
+    if (kalEtap) kalKrok(qU, qG, d);
+    if (kal) {
+      const w = KAL.zastosuj(kal, qU, qG);
+      KAL.autoSync(kal, kalSync, w, d.accU, d.accG, 0.02);   // zgrywanie yaw, gdy stoisz prosto i nieruchomo
+      qWyswU = w.RTd; qWyswG = w.RSd;
+      katSurowy = w.kat;
+      kat = w.kat - kal.offset;              // dodatni = zgiecie
+    } else {
+      kat = katQ(ostatniQrel, qZero);           // odchylenie od pozycji "zero"
+    }
     historia.push(kat); if (historia.length > 500) historia.shift();
     romMin = romMin === null ? kat : Math.min(romMin, kat);
     romMax = romMax === null ? kat : Math.max(romMax, kat);
@@ -280,6 +493,8 @@ function obsluzPakiet(dv) {
     if (!wGorze && kat > prog) wGorze = true;
     else if (wGorze && kat < prog / 2) { wGorze = false; powt++; }
   }
+
+  if (window.ustaw3D && (kal ? (d.udoOk && d.golenOk) : true)) ustaw3D(qWyswU, qWyswG);
 
   if (nagrywa) {
     // kolumny: czas, kat, udo(3), golen(3), ruch udo, ruch golen, fsr1..fsr4, udo_ok, golen_ok
@@ -294,10 +509,11 @@ function obsluzPakiet(dv) {
   if (teraz - okno >= 1000) { hz = pakiety; pakiety = 0; okno = teraz; }
   if (teraz - ostDom < 60) return;   // ekran odswiezamy ~15x/s
   ostDom = teraz;
+  odswiezKalUI();
 
   if (kat !== null) {
     $('kat').textContent = kat.toFixed(1) + '°';
-    $('statusimu').innerHTML = '<span class="ok">oba czujniki OK</span> · ' + hz + ' Hz' + (zgubione ? ' · zgubione: ' + zgubione : '');
+    $('statusimu').innerHTML = '<span class="ok">oba czujniki OK</span> · ' + hz + ' Hz' + (zgubione ? ' · zgubione: ' + zgubione : '') + (kal ? ' · skalibrowano' : ' · <span class="warn">brak kalibracji</span>');
   } else {
     $('kat').textContent = '—';
     $('statusimu').innerHTML = '<span class="err">czujnik: udo ' + (d.udoOk ? 'OK' : 'BRAK') + ' · golen ' + (d.golenOk ? 'OK' : 'BRAK') + '</span>';
@@ -317,10 +533,18 @@ function obsluzPakiet(dv) {
 
 // ================= przyciski =================
 $('btnZero').onclick = () => {
+  if (kal) {        // tryb skalibrowany: zero = obecny kat kolana (noga prosta)
+    if (katSurowy === null) { alert('Brak danych z obu czujnikow.'); return; }
+    kal.offset = katSurowy; historia = []; romMin = romMax = null; powt = 0; wGorze = false;
+    return;
+  }
   if (!ostatniQrel) { alert('Brak danych z obu czujnikow.'); return; }
   qZero = ostatniQrel.slice();
   historia = []; romMin = romMax = null; powt = 0; wGorze = false;
 };
+$('btnKal').onclick = kalStart;
+$('btnKalDalej').onclick = kalDalej;
+$('btnKalAnuluj').onclick = kalAnuluj;
 $('btnResetStat').onclick = () => { romMin = romMax = null; powt = 0; wGorze = false; };
 
 $('btnNagraj').onclick = () => {
@@ -361,7 +585,7 @@ function rysujWykres() {
   wctx.strokeStyle = '#333'; wctx.lineWidth = 1;
   for (const k of [45, 90, 135]) { const y = H - k / 180 * H; wctx.beginPath(); wctx.moveTo(0, y); wctx.lineTo(W, y); wctx.stroke(); }
   wctx.strokeStyle = '#e07b00'; wctx.lineWidth = 2 * devicePixelRatio; wctx.beginPath();
-  historia.forEach((v, i) => { const x = i / 499 * W, y = H - Math.min(180, v) / 180 * H; i ? wctx.lineTo(x, y) : wctx.moveTo(x, y); });
+  historia.forEach((v, i) => { const x = i / 499 * W, y = H - Math.max(0, Math.min(180, v)) / 180 * H; i ? wctx.lineTo(x, y) : wctx.moveTo(x, y); });
   wctx.stroke();
 }
 
@@ -376,18 +600,24 @@ if (window.THREE) {
   el.appendChild(render.domElement);
   scena.add(new THREE.AmbientLight(0xffffff, 0.6));
   const sw = new THREE.DirectionalLight(0xffffff, 0.8); sw.position.set(3, 5, 4); scena.add(sw);
+  // segment obraca sie wokol swojego gornego konca (biodro / kolano); goleni jest dzieckiem uda
   const segment = kolor => {
     const g = new THREE.Group();
-    g.add(new THREE.Mesh(new THREE.BoxGeometry(0.45, 1.7, 0.28), new THREE.MeshStandardMaterial({ color: kolor })));
+    const bryla = new THREE.Mesh(new THREE.BoxGeometry(0.45, 1.7, 0.28), new THREE.MeshStandardMaterial({ color: kolor }));
+    bryla.position.y = -0.85; g.add(bryla);
     const nos = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.3), new THREE.MeshStandardMaterial({ color: 0xffffff }));
-    nos.position.set(0, 0.6, 0.28); g.add(nos);
+    nos.position.set(0, -0.3, 0.28); g.add(nos);                       // bialy "nos" = przod nogi
+    const staw = new THREE.Mesh(new THREE.SphereGeometry(0.17, 16, 12), new THREE.MeshStandardMaterial({ color: 0x888888 }));
+    g.add(staw);
     return g;
   };
-  const mU = segment(0x4a90d9); mU.position.y = 1.05; scena.add(mU);
-  const mG = segment(0xe07b00); mG.position.y = -1.05; scena.add(mG);
+  const mU = segment(0x4a90d9); mU.position.y = 1.5; scena.add(mU);
+  const mG = segment(0xe07b00); mG.position.y = -1.7; mU.add(mG);
   const siatka = new THREE.GridHelper(6, 12, 0x444444, 0x2a2a2a); siatka.position.y = -2.2; scena.add(siatka);
   const celU = new THREE.Quaternion(), celG = new THREE.Quaternion();
-  window.ustaw3D = (qU, qG) => { celU.set(qU[1], qU[2], qU[3], qU[0]); celG.set(qG[1], qG[2], qG[3], qG[0]); };
+  // qU, qG = orientacje absolutne; goleni jest dzieckiem uda, wiec obracamy ja o orientacje wzgledna
+  window.ustaw3D = (qU, qG) => { const l = qmul(qconj(qU), qG); celU.set(qU[1], qU[2], qU[3], qU[0]); celG.set(l[1], l[2], l[3], l[0]); };
+  window.model3D = { udo: mU, golen: mG };
   window.zmienRozmiar3D = () => { const w = el.clientWidth || 300; render.setSize(w, 260); kamera.aspect = w / 260; kamera.updateProjectionMatrix(); };
   addEventListener('resize', zmienRozmiar3D);
   (function anim() {
