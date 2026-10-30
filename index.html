@@ -33,6 +33,15 @@
   #brakBT ol{padding-left:20px;margin:8px 0}
   input[type=number]{width:64px;background:#262628;color:#eee;border:1px solid #444;border-radius:6px;padding:4px}
   .kalinstr{margin:8px 0;line-height:1.4}
+  .rzad.male-przyciski button{min-width:70px;padding:9px 8px;font-size:.9em}
+  .kontrolki label{display:flex;align-items:center;gap:6px;background:#262628;border-radius:8px;padding:8px 10px;flex:1;min-width:70px}
+  .kontrolki input[type=checkbox]{width:18px;height:18px}
+  .suwak{display:flex;align-items:center;gap:8px;margin:6px 0}
+  .suwak span.n{flex:0 0 150px;font-size:.85em;color:#bbb}
+  .suwak input[type=range]{flex:1;min-width:0}
+  .suwak span.w{flex:0 0 52px;text-align:right;font-size:.85em}
+  details summary{cursor:pointer;color:#bbb;margin-top:10px}
+  #wykresFsr{width:100%;height:90px;display:block}
   .ukryte{display:none}
 </style>
 </head>
@@ -79,9 +88,10 @@
     <div class="rzad">
       <button id="btnKal">Kalibruj czujniki</button>
       <button id="btnKalDalej" class="ukryte">Gotowe</button>
+      <button id="btnKalSzybka" class="ukryte">Szybka korekta (po przesunieciu)</button>
       <button id="btnKalAnuluj" class="ukryte">Anuluj</button>
     </div>
-    <div class="male" style="margin-top:8px">Po kazdym wlaczeniu opaski (zasilaniu) kalibracje trzeba powtorzyc - zajmuje ok. 30 s. Czujniki same sie potem zgrywaja, gdy stoisz prosto i nieruchomo.</div>
+    <div class="male" style="margin-top:8px">Po kazdym wlaczeniu opaski (zasilaniu) kalibracje trzeba powtorzyc - zajmuje ok. 30 s. Czujniki same sie potem zgrywaja, gdy stoisz prosto i nieruchomo. Jesli opaska sie obsunela, uzyj <b>Szybkiej korekty</b> (stoj prosto + 3 zgiecia kolana, ok. 10 s) - nie trzeba wtedy powtarzac wymachow.</div>
   </div>
 
   <div class="karta">
@@ -96,24 +106,64 @@
   <div class="karta">
     <div class="tytul">Noga 3D (niebieski = udo, pomaranczowy = golen)</div>
     <div id="scena"></div>
+    <div class="rzad male-przyciski" style="margin-top:8px">
+      <button data-widok="przod">Przod</button><button data-widok="bok">Bok</button><button data-widok="skos">Skos</button><button data-widok="gora">Z gory</button>
+      <button id="btnKotwica">Kotwica: biodro</button>
+    </div>
+    <div class="male" style="margin-top:6px">Przeciagnij model, zeby obrocic widok (kolko myszy = zoom, dwa palce = zoom). <b>Kotwica: stopa</b> = stopa stoi na podlodze, a biodro sie porusza (przysiad, wykrok); <b>biodro</b> = biodro w miejscu (unoszenie nogi). Kolorowe znaczniki na nodze to czujniki FSR &mdash; swieca mocniej przy wiekszym nacisku.</div>
+    <details>
+      <summary>Rozmieszczenie czujnikow na nodze (na oko)</summary>
+      <div class="male" style="margin:6px 0">Ustaw odleglosc od srodka kolana w cm &mdash; tylko do wizualizacji i opisu sesji, pomiar kata od tego nie zalezy. Nie musi byc dokladnie.</div>
+      <div class="suwak"><span class="n">BNO udo (nad kolanem)</span><input type="range" id="pozImuU" min="0" max="35"><span class="w" id="pozImuUV"></span></div>
+      <div class="suwak"><span class="n">BNO golen (pod kolanem)</span><input type="range" id="pozImuG" min="0" max="35"><span class="w" id="pozImuGV"></span></div>
+      <div class="suwak"><span class="n">FSR 1 (udo)</span><input type="range" id="pozF1" min="0" max="35"><span class="w" id="pozF1V"></span></div>
+      <div class="suwak"><span class="n">FSR 2 (udo)</span><input type="range" id="pozF2" min="0" max="35"><span class="w" id="pozF2V"></span></div>
+      <div class="suwak"><span class="n">FSR 3 (golen)</span><input type="range" id="pozF3" min="0" max="35"><span class="w" id="pozF3V"></span></div>
+      <div class="suwak"><span class="n">FSR 4 (golen)</span><input type="range" id="pozF4" min="0" max="35"><span class="w" id="pozF4V"></span></div>
+    </details>
   </div>
 
   <div class="karta">
-    <div class="tytul">Nacisk FSR (0&ndash;4095)</div>
-    <div class="male">FSR 1: <span id="fsrV1">0</span></div>
-    <div class="pasek"><div id="fsrB1" style="background:#ff7f0e"></div></div>
-    <div class="male">FSR 2: <span id="fsrV2">0</span></div>
-    <div class="pasek"><div id="fsrB2" style="background:#9467bd"></div></div>
-    <div class="male">FSR 3: <span id="fsrV3">0</span></div>
-    <div class="pasek"><div id="fsrB3" style="background:#e377c2"></div></div>
-    <div class="male">FSR 4: <span id="fsrV4">0</span></div>
-    <div class="pasek"><div id="fsrB4" style="background:#17becf"></div></div>
+    <div class="tytul">Nacisk FSR (napiecie miesni)</div>
+    <canvas id="wykresFsr"></canvas>
+    <div class="male srodek">ostatnie 10 s, % zakresu (4 kanaly)</div>
+    <div style="margin-top:10px">
+      <div class="male"><span style="color:#ff7f0e">&#9632;</span> FSR 1: <b id="fsrP1">0%</b> <span class="male">(<span id="fsrV1">0</span>, <span id="fsrT1">auto</span>)</span></div>
+      <div class="pasek"><div id="fsrB1" style="background:#ff7f0e"></div></div>
+      <div class="male"><span style="color:#9467bd">&#9632;</span> FSR 2: <b id="fsrP2">0%</b> <span class="male">(<span id="fsrV2">0</span>, <span id="fsrT2">auto</span>)</span></div>
+      <div class="pasek"><div id="fsrB2" style="background:#9467bd"></div></div>
+      <div class="male"><span style="color:#e377c2">&#9632;</span> FSR 3: <b id="fsrP3">0%</b> <span class="male">(<span id="fsrV3">0</span>, <span id="fsrT3">auto</span>)</span></div>
+      <div class="pasek"><div id="fsrB3" style="background:#e377c2"></div></div>
+      <div class="male"><span style="color:#17becf">&#9632;</span> FSR 4: <b id="fsrP4">0%</b> <span class="male">(<span id="fsrV4">0</span>, <span id="fsrT4">auto</span>)</span></div>
+      <div class="pasek"><div id="fsrB4" style="background:#17becf"></div></div>
+    </div>
     <div class="male" id="fsrInfo"></div>
-    <div class="tytul" style="margin-top:12px">Intensywnosc ruchu [m/s&sup2;]</div>
+    <div class="suwak" style="margin-top:8px"><span class="n">Czulosc (wzmocnienie)</span><input type="range" id="fsrGain" min="1" max="10" step="0.5"><span class="w" id="fsrGainV"></span></div>
+    <div class="male">Bez kalibracji skala dopasowuje sie sama do ostatnich 60 s (tryb <i>auto</i>), wiec nawet male zmiany nacisku sa widoczne. Dokladniej: kalibracja ponizej.</div>
+    <div class="tytul" style="margin-top:12px">Intensywnosc ruchu [m/s&sup2;] (ponizej 0,15 = cisza)</div>
     <div class="male">udo: <span id="aT">0</span></div>
     <div class="pasek"><div id="aTB" style="background:#4a90d9"></div></div>
     <div class="male">golen: <span id="aS">0</span></div>
     <div class="pasek"><div id="aSB" style="background:#e07b00"></div></div>
+  </div>
+
+  <div class="karta" id="kartaFsrKal">
+    <div class="tytul">Kalibracja FSR</div>
+    <div class="male">Zaloz opaske tak, jak bedzie uzywana. Zaznacz czujniki do kalibracji (wszystkie, para gora/dol albo pojedyncze):</div>
+    <div class="rzad kontrolki" style="margin-top:8px">
+      <label><input type="checkbox" id="fsrCk1" checked> FSR 1</label><label><input type="checkbox" id="fsrCk2" checked> FSR 2</label>
+      <label><input type="checkbox" id="fsrCk3" checked> FSR 3</label><label><input type="checkbox" id="fsrCk4" checked> FSR 4</label>
+    </div>
+    <div class="rzad male-przyciski" style="margin-top:8px">
+      <button id="btnFsrWsz">Wszystkie</button><button id="btnFsrGora">Udo (1+2)</button><button id="btnFsrDol">Golen (3+4)</button>
+    </div>
+    <div class="kalinstr" id="fsrKalTekst"></div>
+    <div class="pasek" id="fsrKalPasekObr"><div id="fsrKalPasek" style="background:#2f7de1"></div></div>
+    <div class="rzad">
+      <button id="btnFsrKal">Kalibruj zaznaczone</button>
+      <button id="btnFsrAnuluj" class="ukryte">Anuluj</button>
+      <button id="btnFsrReset">Wyczysc kalibracje zaznaczonych</button>
+    </div>
   </div>
 </div>
 
@@ -233,10 +283,11 @@ const KAL = (() => {
     for (let k = 0; k < probki.length; k++)
       kor += (W.rvU[k][0]*aU[0] + W.rvU[k][1]*aU[1] + W.rvU[k][2]*aU[2]) * (W.rvG[k][0]*aG[0] + W.rvG[k][1]*aG[1] + W.rvG[k][2]*aG[2]);
     if (kor < 0) aG = aG.map(v => -v);
-    const M = a => qmul(Rz(Math.atan2(-a[1], -a[0])), P);   // F -> swiat czujnika (X ciala = -a)
+    const psi = a => Math.atan2(-a[1], -a[0]);                // kurs osi X ciala (= -a) w swiecie czujnika
+    const M = a => qmul(Rz(psi(a)), P);                       // F -> swiat czujnika
     return {
       ok: true,
-      kal: { c, q0U: q0U.slice(), q0G: q0G.slice(), MU: M(aU), MG: M(aG), delta: 0, offset: 0 },
+      kal: { c, q0U: q0U.slice(), q0G: q0G.slice(), MU: M(aU), MG: M(aG), psiU: psi(aU), psiG: psi(aG), delta: 0, offset: 0 },
       info: { konwencja: c, gradU, gradG, wyjasniaU: W.U.wyjasnia, wyjasniaG: W.G.wyjasnia, poziomU: Math.asin(Math.min(1, Math.abs(W.U.a[2]))) * 180 / Math.PI, poziomG: Math.asin(Math.min(1, Math.abs(W.G.a[2]))) * 180 / Math.PI }
     };
   }
@@ -260,8 +311,28 @@ const KAL = (() => {
     for (const p of probki) { const w = zastosuj(kal, p.u, p.g); mn = Math.min(mn, w.kat); mx = Math.max(mx, w.kat); }
     const amp = Math.max(-mn, mx);
     if (probki.length < 40 || amp < 20) return { ok: false, blad: 'zginanie kolana za male (' + amp.toFixed(0) + '\u00B0) - zegnij kolano mocniej (pieta do posladka)' };
-    if (-mn > mx) { const k = JSON.parse(JSON.stringify(kal)); k.MU = qmul(k.MU, Ry(Math.PI)); k.MG = qmul(k.MG, Ry(Math.PI)); return { ok: true, kal: k, odwrocono: true, amp }; }
+    if (-mn > mx) { const k = JSON.parse(JSON.stringify(kal)); k.MU = qmul(k.MU, Ry(Math.PI)); k.MG = qmul(k.MG, Ry(Math.PI)); k.psiU += Math.PI; k.psiG += Math.PI; return { ok: true, kal: k, odwrocono: true, amp }; }
     return { ok: true, kal, odwrocono: false, amp };
+  }
+
+  // Szybka korekta po obsunieciu czujnikow: nowa poza zerowa (stoje prosto, dowolnym kierunkiem) + 3 zgiecia kolana.
+  // Kierunek "przodu" wynika z osi zgiecia kola (os obrotu goleni, udo nieruchome); roznica kursow obu czujnikow
+  // zostaje z pelnej kalibracji (poprawiona o dotychczasowy dryf kal.delta).
+  function szybka(kal, q0U, q0G, probki) {
+    if (probki.length < 40) return { ok: false, blad: 'za malo danych - zegnij kolano wolniej i dluzej' };
+    const rv = probki.map(p => wekObrotu(dyn(kal.c, p.g, q0G)));
+    const G = osGlowna(rv), gr = G.maxKat * 180 / Math.PI;
+    if (gr < 20) return { ok: false, blad: 'zginanie kolana za male (' + gr.toFixed(0) + '\u00B0) - zegnij mocniej (pieta do posladka)' };
+    if (G.wyjasnia < 0.8) return { ok: false, blad: 'ruch nie byl zginaniem kolana w jednej plaszczyznie - zegnij kolano, nie ruszajac biodrem w bok' };
+    if (Math.abs(G.a[2]) > 0.35) return { ok: false, blad: 'os ruchu nie jest pozioma - stan prosto i zginaj kolano w przod-tyl' };
+    let a = G.a.slice(), rm = rv[0], mm = 0;
+    for (const r of rv) { const n = Math.hypot(r[0], r[1], r[2]); if (n > mm) { mm = n; rm = r; } }
+    if (a[0]*rm[0] + a[1]*rm[1] + a[2]*rm[2] < 0) a = a.map(v => -v);        // zgiecie = obrot dodatni wokol X ciala
+    const psiG = Math.atan2(a[1], a[0]), psiU = psiG + (kal.psiU - kal.psiG) - kal.delta;
+    const k = JSON.parse(JSON.stringify(kal));
+    k.q0U = q0U.slice(); k.q0G = q0G.slice();
+    k.MU = qmul(Rz(psiU), P); k.MG = qmul(Rz(psiG), P); k.psiU = psiU; k.psiG = psiG; k.delta = 0; k.offset = 0;
+    return { ok: true, kal: k, amp: gr };
   }
 
   // automatyczne zgranie yaw: gdy stoisz prosto i nieruchomo, oba czujniki musza byc zgodne
@@ -274,7 +345,7 @@ const KAL = (() => {
     }
     return false;
   }
-  return { qmul, qconj, qnorm, qos, Ry, Rz, P, kalibruj, ustawZnak, zastosuj, autoSync, dyn, wekObrotu, skretY, poz };
+  return { qmul, qconj, qnorm, qos, Ry, Rz, P, kalibruj, ustawZnak, szybka, zastosuj, autoSync, dyn, wekObrotu, skretY, poz };
 })();
 // ==== KALIBRACJA KONIEC ====
 
@@ -284,28 +355,33 @@ const kalSync = { stoi: 0 };
 let katSurowy = null;              // ostatni kat kolana ze skalibrowanego trybu (przed odjeciem zera)
 let kalEtap = 0;                   // 0 = brak, 1 = stoj prosto, 2 = wymachy prosta noga, 3 = zginanie kolana
 let kalLicz = 0, kalRef = null, kalQ0 = null, kalProbki = [], kalKal = null, kalInfo = null;
-let kalMaxU = 0, kalMaxG = 0, kalMaxKat = 0, kalBlad = '', kalPodsumowanie = '';
+let kalMaxU = 0, kalMaxG = 0, kalMaxKat = 0, kalBlad = '', kalPodsumowanie = '', kalSzybka = false;
 const KAL_STOI_N = 100;            // ok. 2 s nieruchomo przy 50 Hz
 
 function kalStart() {
+  kalSzybka = false;
   kalEtap = 1; kalLicz = 0; kalRef = null; kalProbki = []; kalKal = null; kalInfo = null;
   kalMaxU = kalMaxG = kalMaxKat = 0; kalBlad = ''; kalPodsumowanie = '';
   odswiezKalUI();
 }
-function kalAnuluj() { kalEtap = 0; kalProbki = []; kalKal = null; kalBlad = ''; odswiezKalUI(); }
+function kalStartSzybka() {          // po obsunieciu opaski: nowa poza zerowa + zginanie kolana (bez wymachow)
+  if (!kal) return;
+  kalStart(); kalSzybka = true; odswiezKalUI();
+}
+function kalAnuluj() { kalSzybka = false; kalEtap = 0; kalProbki = []; kalKal = null; kalBlad = ''; odswiezKalUI(); }
 
 // wywolywane dla kazdego pakietu, gdy oba czujniki odpowiadaja
 function kalKrok(qU, qG, d) {
   if (kalEtap === 1) {
     const spokojnie = d.accU < 0.8 && d.accG < 0.8;
     if (!kalRef || !spokojnie || katQ(qU, kalRef.u) > 3 || katQ(qG, kalRef.g) > 3) { kalRef = spokojnie ? { u: qU, g: qG } : null; kalLicz = 0; return; }
-    if (++kalLicz >= KAL_STOI_N) { kalQ0 = { u: qU, g: qG }; kalEtap = 2; kalProbki = []; kalMaxU = kalMaxG = 0; }
+    if (++kalLicz >= KAL_STOI_N) { kalQ0 = { u: qU, g: qG }; kalEtap = kalSzybka ? 3 : 2; kalProbki = []; kalMaxU = kalMaxG = 0; kalMaxKat = 0; }
   } else if (kalEtap === 2) {
     kalProbki.push({ u: qU, g: qG }); if (kalProbki.length > 3000) kalProbki.shift();
     kalMaxU = Math.max(kalMaxU, katQ(qU, kalQ0.u)); kalMaxG = Math.max(kalMaxG, katQ(qG, kalQ0.g));
   } else if (kalEtap === 3) {
     kalProbki.push({ u: qU, g: qG }); if (kalProbki.length > 3000) kalProbki.shift();
-    kalMaxKat = Math.max(kalMaxKat, Math.abs(KAL.zastosuj(kalKal, qU, qG).kat));
+    kalMaxKat = Math.max(kalMaxKat, kalSzybka ? katQ(qmul(qconj(qU), qG), qmul(qconj(kalQ0.u), kalQ0.g)) : Math.abs(KAL.zastosuj(kalKal, qU, qG).kat));
   }
 }
 
@@ -314,6 +390,12 @@ function kalDalej() {
     const kk = KAL.kalibruj(kalProbki, kalQ0.u, kalQ0.g);
     if (!kk.ok) { kalBlad = kk.blad; kalProbki = []; kalMaxU = kalMaxG = 0; return; }   // zostajemy w kroku 2: nowe nagranie
     kalKal = kk.kal; kalInfo = kk.info; kalEtap = 3; kalProbki = []; kalMaxKat = 0; kalBlad = '';
+  } else if (kalEtap === 3 && kalSzybka) {
+    const sz = KAL.szybka(kal, kalQ0.u, kalQ0.g, kalProbki);
+    if (!sz.ok) { kalBlad = sz.blad; kalProbki = []; kalMaxKat = 0; return; }
+    kal = sz.kal; kal.offset = 0; kalSync.stoi = 0; kalEtap = 0; kalSzybka = false; kalBlad = '';
+    kalPodsumowanie = 'szybka korekta wykonana (zgiecie kolana ' + sz.amp.toFixed(0) + '\u00B0)';
+    historia = []; romMin = romMax = null; powt = 0; wGorze = false;
   } else if (kalEtap === 3) {
     const zn = KAL.ustawZnak(kalKal, kalProbki);
     if (!zn.ok) { kalBlad = zn.blad; kalProbki = []; kalMaxKat = 0; return; }
@@ -329,7 +411,7 @@ function odswiezKalUI() {
   const t = $('kalTekst'), p = $('kalPasek'), po = $('kalPasekObr');
   let tekst = '', pasek = 0;
   if (kalEtap === 1) {
-    tekst = '<b>Krok 1/3.</b> Stan prosto, nogi razem, kolana wyprostowane. Nie ruszaj sie ok. 2 s.';
+    tekst = (kalSzybka ? '<b>Szybka korekta 1/2.</b> Stan prosto (mozesz stac w dowolnym kierunku), kolana wyprostowane. Nie ruszaj sie ok. 2 s.' : '<b>Krok 1/3.</b> Stan prosto, nogi razem, kolana wyprostowane. Nie ruszaj sie ok. 2 s.');
     pasek = kalLicz / KAL_STOI_N;
   } else if (kalEtap === 2) {
     const ok = kalMaxU >= 15 && kalMaxG >= 15 && kalProbki.length >= 150;
@@ -339,7 +421,7 @@ function odswiezKalUI() {
     $('btnKalDalej').disabled = !ok;
   } else if (kalEtap === 3) {
     const ok = kalMaxKat >= 25 && kalProbki.length >= 100;
-    tekst = '<b>Krok 3/3.</b> Zegnij kolano (pieta do posladka) 3 razy &mdash; stojac albo siedzac, udo w miejscu. Potem kliknij <b>Gotowe</b>.' +
+    tekst = '<b>' + (kalSzybka ? 'Szybka korekta 2/2.' : 'Krok 3/3.') + '</b> Zegnij kolano (pieta do posladka) 3 razy &mdash; stojac albo siedzac, udo w miejscu. Potem kliknij <b>Gotowe</b>.' +
       '<br><span class="male">zgiecie: ' + kalMaxKat.toFixed(0) + '&deg; (potrzeba min. 25&deg;)</span>';
     pasek = kalMaxKat / 30;
     $('btnKalDalej').disabled = !ok;
@@ -352,9 +434,10 @@ function odswiezKalUI() {
   if (t.innerHTML !== tekst) t.innerHTML = tekst;
   p.style.width = Math.min(100, pasek * 100) + '%';
   po.style.display = kalEtap ? '' : 'none';
-  $('btnKal').textContent = kal ? 'Kalibruj ponownie' : 'Kalibruj czujniki';
+  $('btnKal').textContent = kal ? 'Kalibruj ponownie (pelna)' : 'Kalibruj czujniki';
   $('btnKal').classList.toggle('ukryte', !!kalEtap);
   $('btnKalDalej').classList.toggle('ukryte', kalEtap < 2);
+  $('btnKalSzybka').classList.toggle('ukryte', !(kal && !kalEtap));
   $('btnKalAnuluj').classList.toggle('ukryte', !kalEtap);
 }
 
@@ -446,6 +529,7 @@ function naFsr(e) {
   if (dv.byteLength < 10) return;
   fsrSeq = dv.getUint8(0);
   for (let i = 0; i < 4; i++) fsr[i] = dv.getUint16(2 + 2 * i, true);
+  fsrNowaProbka();
   // pakiet FSR przychodzi zaraz po glownym z tym samym numerem - dopisz do ostatniego wiersza nagrania
   if (nagrywa && ostatniWiersz && ostatniWierszSeq === fsrSeq) {
     ostatniWiersz[IDX_FSR] = fsr[0]; ostatniWiersz[IDX_FSR + 1] = fsr[1];
@@ -469,7 +553,7 @@ function obsluzPakiet(dv) {
     fsr1: dv.getUint16(18, true)
   };
   pakiety++;
-  if (!maFsr4) fsr[0] = d.fsr1;   // stary firmware: tylko FSR1 z pakietu glownego
+  if (!maFsr4) { fsr[0] = d.fsr1; fsrNowaProbka(); }   // stary firmware: tylko FSR1 z pakietu glownego
 
   const qU = euler2q(...d.udo), qG = euler2q(...d.golen);
   let qWyswU = qU, qWyswG = qG;     // co pokazac w modelu 3D
@@ -521,14 +605,151 @@ function obsluzPakiet(dv) {
   $('romMin').textContent = romMin === null ? '—' : romMin.toFixed(0) + '°';
   $('romMax').textContent = romMax === null ? '—' : romMax.toFixed(0) + '°';
   $('powt').textContent = powt;
-  for (let i = 0; i < 4; i++) {
-    $('fsrV' + (i + 1)).textContent = fsr[i];
-    $('fsrB' + (i + 1)).style.width = (fsr[i] / 4095 * 100) + '%';
-  }
-  $('aT').textContent = d.accU.toFixed(2); $('aTB').style.width = Math.min(100, d.accU / 20 * 100) + '%';
-  $('aS').textContent = d.accG.toFixed(2); $('aSB').style.width = Math.min(100, d.accG / 20 * 100) + '%';
+  odswiezFsrUI();
+  const au = bramka(d.accU), ag = bramka(d.accG);
+  $('aT').textContent = au.toFixed(2); $('aTB').style.width = Math.min(100, au / 20 * 100) + '%';
+  $('aS').textContent = ag.toFixed(2); $('aSB').style.width = Math.min(100, ag / 20 * 100) + '%';
   if (nagrywa) $('infoNagr').textContent = 'nagrywanie: ' + ((teraz - startNagr) / 1000).toFixed(0) + ' s, ' + nagranie.length + ' probek';
   rysujWykres();
+}
+
+// ================= pamiec ustawien (localStorage - tylko wygoda, strona dziala bez niej) =================
+function lsGet(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (_) { return null; } }
+function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (_) {} }
+
+// ================= intensywnosc ruchu: prog ciszy =================
+// czujnik w spoczynku pokazuje 0,05-0,11 m/s2 (szum); ponizej progu pokazujemy 0
+const PROG_CISZY = 0.15;
+const bramka = v => (v < PROG_CISZY ? 0 : v);
+
+// ================= rozmieszczenie czujnikow na nodze (na oko) =================
+const POZ_DOM = { imuU: 15, imuG: 10, f: [12, 12, 10, 10] };
+let poz = { imuU: POZ_DOM.imuU, imuG: POZ_DOM.imuG, f: POZ_DOM.f.slice() };
+{ const z = lsGet('opaskafit_poz'); if (z && isFinite(z.imuU) && isFinite(z.imuG) && Array.isArray(z.f) && z.f.length === 4) poz = z; }
+const POZ_POLA = [['pozImuU', () => poz.imuU, v => { poz.imuU = v; }], ['pozImuG', () => poz.imuG, v => { poz.imuG = v; }],
+  ['pozF1', () => poz.f[0], v => { poz.f[0] = v; }], ['pozF2', () => poz.f[1], v => { poz.f[1] = v; }],
+  ['pozF3', () => poz.f[2], v => { poz.f[2] = v; }], ['pozF4', () => poz.f[3], v => { poz.f[3] = v; }]];
+for (const [id, get, set] of POZ_POLA) {
+  const el = $(id); el.value = get(); $(id + 'V').textContent = get() + ' cm';
+  el.oninput = () => { set(+el.value); $(id + 'V').textContent = el.value + ' cm'; lsSet('opaskafit_poz', poz); if (window.ustawMarkery3D) ustawMarkery3D(); };
+}
+
+// ================= FSR: skalowanie, kalibracja, wykres =================
+const FSR_KOLORY = ['#ff7f0e', '#9467bd', '#e377c2', '#17becf'];
+let fsrKal = [null, null, null, null];        // {tara, pelna} albo null = tryb auto
+let fsrGain = 1;
+{ const z = lsGet('opaskafit_fsr'); if (z && Array.isArray(z.kal) && z.kal.length === 4) { fsrKal = z.kal; if (z.gain >= 1 && z.gain <= 10) fsrGain = z.gain; } }
+const fsrHist = [[], [], [], []];             // surowe odczyty z ostatnich 60 s (auto-skala)
+const fsrSkalaCache = [{}, {}, {}, {}];
+let fsrFilt = [0, 0, 0, 0], fsrFiltInit = false;
+let fsrPct = [0, 0, 0, 0];
+const fsrWykres = [[], [], [], []];           // ostatnie ~10 s w % (0..1)
+let fsrEtap = 0, fsrT0 = 0, fsrBuf = [[], [], [], []], fsrTaraTmp = [0, 0, 0, 0], fsrWybrane = [], fsrBlad = '', fsrPodsumowanie = '';
+const FSR_RELAKS_MS = 3000, FSR_NAPIECIE_MS = 4000;
+const fsrZapisz = () => lsSet('opaskafit_fsr', { kal: fsrKal, gain: fsrGain });
+
+function fsrNowaProbka() {                    // przy kazdym nowym odczycie FSR (~50 Hz)
+  for (let i = 0; i < 4; i++) {
+    fsrFilt[i] = fsrFiltInit ? fsrFilt[i] + 0.35 * (fsr[i] - fsrFilt[i]) : fsr[i];
+    const h = fsrHist[i]; h.push(fsr[i]); if (h.length > 3000) h.shift();
+  }
+  fsrFiltInit = true;
+  if (fsrEtap) fsrKrok();
+}
+const mediana = a => { const b = a.slice().sort((x, y) => x - y); return b.length ? b[b.length >> 1] : 0; };
+function fsrKrok() {
+  const dt = performance.now() - fsrT0;
+  for (const i of fsrWybrane) fsrBuf[i].push(fsr[i]);
+  if (fsrEtap === 1 && dt >= FSR_RELAKS_MS) {
+    for (const i of fsrWybrane) { fsrTaraTmp[i] = mediana(fsrBuf[i]); fsrBuf[i] = []; }
+    fsrEtap = 2; fsrT0 = performance.now();
+  } else if (fsrEtap === 2 && dt >= FSR_NAPIECIE_MS) {
+    const ostrz = [], wyn = [];
+    for (const i of fsrWybrane) {
+      const b = fsrBuf[i].slice().sort((x, y) => y - x), n = Math.max(3, Math.ceil(b.length * 0.15));
+      const pelna = b.slice(0, n).reduce((x, y) => x + y, 0) / n, tara = fsrTaraTmp[i], zakres = pelna - tara;
+      fsrKal[i] = { tara: Math.round(tara), pelna: Math.round(Math.max(pelna, tara + 10)) };
+      wyn.push('FSR ' + (i + 1) + ': tara ' + fsrKal[i].tara + ', maks. ' + fsrKal[i].pelna + ', zakres ' + Math.round(zakres));
+      if (zakres < 25) ostrz.push('FSR ' + (i + 1) + ': zakres tylko ' + Math.round(zakres) + ' - czujnik prawie nie reaguje (dociagnij opaske, przesun czujnik na brzusiec miesnia albo zwieksz rezystor dzielnika)');
+    }
+    fsrBlad = ostrz.join('<br>'); fsrPodsumowanie = wyn.join('<br>');
+    fsrEtap = 0; fsrZapisz();
+  }
+}
+function fsrWybraneZUI() { const w = []; for (let i = 0; i < 4; i++) if ($('fsrCk' + (i + 1)).checked) w.push(i); return w; }
+$('btnFsrKal').onclick = () => {
+  fsrWybrane = fsrWybraneZUI();
+  if (!fsrWybrane.length) { fsrBlad = 'Zaznacz przynajmniej jeden czujnik.'; odswiezFsrKalUI(); return; }
+  fsrBuf = [[], [], [], []]; fsrBlad = ''; fsrPodsumowanie = ''; fsrEtap = 1; fsrT0 = performance.now(); odswiezFsrKalUI();
+};
+$('btnFsrAnuluj').onclick = () => { fsrEtap = 0; fsrBlad = ''; odswiezFsrKalUI(); };
+$('btnFsrReset').onclick = () => { for (const i of fsrWybraneZUI()) fsrKal[i] = null; fsrZapisz(); fsrPodsumowanie = ''; fsrBlad = ''; odswiezFsrKalUI(); };
+const ustawCk = lista => { for (let i = 1; i <= 4; i++) $('fsrCk' + i).checked = lista.includes(i); };
+$('btnFsrWsz').onclick = () => ustawCk([1, 2, 3, 4]);
+$('btnFsrGora').onclick = () => ustawCk([1, 2]);
+$('btnFsrDol').onclick = () => ustawCk([3, 4]);
+$('fsrGain').value = fsrGain; $('fsrGainV').textContent = 'x' + fsrGain;
+$('fsrGain').oninput = () => { fsrGain = +$('fsrGain').value; $('fsrGainV').textContent = 'x' + fsrGain; fsrZapisz(); };
+
+function odswiezFsrKalUI() {
+  const t = $('fsrKalTekst'), po = $('fsrKalPasekObr');
+  let tekst = '', pasek = 0;
+  if (fsrEtap === 1) {
+    const l = Math.max(0, FSR_RELAKS_MS - (performance.now() - fsrT0)) / 1000;
+    tekst = '<b>Krok 1/2.</b> Rozluznij miesnie, nie ruszaj noga (' + l.toFixed(1) + ' s).'; pasek = 1 - l / (FSR_RELAKS_MS / 1000);
+  } else if (fsrEtap === 2) {
+    const l = Math.max(0, FSR_NAPIECIE_MS - (performance.now() - fsrT0)) / 1000;
+    tekst = '<b>Krok 2/2.</b> Napnij miesien <b>jak najmocniej</b> (np. wyprostuj noge i napnij czworoglowy, golen: napnij lydke) i trzymaj (' + l.toFixed(1) + ' s).'; pasek = 1 - l / (FSR_NAPIECIE_MS / 1000);
+  } else {
+    tekst = fsrPodsumowanie ? '<span class="ok">Skalibrowano.</span><br><span class="male">' + fsrPodsumowanie + '</span>'
+      : '<span class="male">Kalibracja: najpierw luzny miesien (zero), potem maksymalne napiecie (100%). Trwa ok. 7 s.</span>';
+  }
+  if (fsrBlad) tekst += '<br><span class="warn">' + fsrBlad + '</span>';
+  if (t.innerHTML !== tekst) t.innerHTML = tekst;
+  $('fsrKalPasek').style.width = Math.min(100, pasek * 100) + '%';
+  po.style.display = fsrEtap ? '' : 'none';
+  $('btnFsrKal').classList.toggle('ukryte', !!fsrEtap);
+  $('btnFsrAnuluj').classList.toggle('ukryte', !fsrEtap);
+  $('btnFsrReset').classList.toggle('ukryte', !!fsrEtap);
+}
+
+function fsrSkala(i) {
+  const k = fsrKal[i];
+  if (k) return { lo: k.tara, span: Math.max(k.pelna - k.tara, 10), auto: false };
+  const h = fsrHist[i];
+  if (h.length < 20) return { lo: fsrFilt[i], span: 50, auto: true };
+  // percentyle zamiast min/max: pojedynczy pik nie splaszcza skali na minute; przeliczane co 0,5 s
+  const c = fsrSkalaCache[i], t = performance.now();
+  if (!c.v || t - c.t > 500) {
+    const b = h.slice().sort((x, y) => x - y), lo = b[Math.floor(b.length * 0.01)], hi = b[Math.min(b.length - 1, Math.floor(b.length * 0.995))];
+    c.t = t; c.v = { lo, span: Math.max(hi - lo, 40), auto: true };
+  }
+  return c.v;
+}
+function rysujWykresFsr() {
+  const cv = $('wykresFsr'), c = cv.getContext('2d');
+  const W = cv.width = cv.clientWidth * devicePixelRatio, H = cv.height = 90 * devicePixelRatio;
+  c.clearRect(0, 0, W, H); c.strokeStyle = '#333'; c.lineWidth = 1;
+  for (const k of [0.25, 0.5, 0.75]) { const y = H - k * H; c.beginPath(); c.moveTo(0, y); c.lineTo(W, y); c.stroke(); }
+  for (let i = 0; i < 4; i++) {
+    c.strokeStyle = FSR_KOLORY[i]; c.lineWidth = 1.6 * devicePixelRatio; c.beginPath();
+    fsrWykres[i].forEach((v, j) => { const x = j / 149 * W, y = H - v * (H - 2) - 1; j ? c.lineTo(x, y) : c.moveTo(x, y); });
+    c.stroke();
+  }
+}
+function odswiezFsrUI() {
+  for (let i = 0; i < 4; i++) {
+    const sk = fsrSkala(i), p = Math.max(0, Math.min(1, (fsrFilt[i] - sk.lo) / sk.span * fsrGain));
+    fsrPct[i] = p;
+    $('fsrV' + (i + 1)).textContent = fsr[i];
+    $('fsrP' + (i + 1)).textContent = Math.round(p * 100) + '%';
+    $('fsrB' + (i + 1)).style.width = (p * 100) + '%';
+    $('fsrT' + (i + 1)).textContent = sk.auto ? 'auto' : 'skalibrowano';
+    const w = fsrWykres[i]; w.push(p); if (w.length > 150) w.shift();
+  }
+  rysujWykresFsr();
+  if (window.ustawNaciskFsr3D) ustawNaciskFsr3D(fsrPct);
+  odswiezFsrKalUI();
 }
 
 // ================= przyciski =================
@@ -543,6 +764,7 @@ $('btnZero').onclick = () => {
   historia = []; romMin = romMax = null; powt = 0; wGorze = false;
 };
 $('btnKal').onclick = kalStart;
+$('btnKalSzybka').onclick = kalStartSzybka;
 $('btnKalDalej').onclick = kalDalej;
 $('btnKalAnuluj').onclick = kalAnuluj;
 $('btnResetStat').onclick = () => { romMin = romMax = null; powt = 0; wGorze = false; };
@@ -590,11 +812,24 @@ function rysujWykres() {
 }
 
 // ================= 3D (opcjonalne - strona dziala tez bez three.js) =================
+const CM = 1.7 / 45;                       // 1 cm w jednostkach sceny (segment 1,7 = ok. 45 cm)
+const WIDOKI = { przod: { az: 0, el: 0.08 }, bok: { az: Math.PI / 2, el: 0.08 }, skos: { az: 0.7, el: 0.3 }, gora: { az: 0, el: 1.45 } };
+let kamera3D = { az: 0.7, el: 0.3, dist: 6.2 };
+{ const z = lsGet('opaskafit_kamera'); if (z && isFinite(z.az) && isFinite(z.el) && isFinite(z.dist)) kamera3D = z; }
+let kotwica = lsGet('opaskafit_kotwica') === 'stopa' ? 'stopa' : 'biodro';
+$('btnKotwica').textContent = 'Kotwica: ' + kotwica;
+$('btnKotwica').onclick = () => { kotwica = kotwica === 'biodro' ? 'stopa' : 'biodro'; $('btnKotwica').textContent = 'Kotwica: ' + kotwica; lsSet('opaskafit_kotwica', kotwica); };
 if (window.THREE) {
   const el = $('scena');
   const scena = new THREE.Scene(); scena.background = new THREE.Color(0x1d1d1f);
-  const kamera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
-  kamera.position.set(2.6, 0.6, 4.2); kamera.lookAt(0, 0, 0);
+  const kam = new THREE.PerspectiveCamera(45, 1, 0.1, 100), cel = new THREE.Vector3(0, -0.2, 0);
+  const klamra = (v, a, b) => Math.max(a, Math.min(b, v));
+  const ustawKamere = () => {
+    const k = kamera3D;
+    kam.position.set(cel.x + k.dist * Math.sin(k.az) * Math.cos(k.el), cel.y + k.dist * Math.sin(k.el), cel.z + k.dist * Math.cos(k.az) * Math.cos(k.el));
+    kam.lookAt(cel);
+  };
+  const zapiszKamere = () => lsSet('opaskafit_kamera', kamera3D);
   const render = new THREE.WebGLRenderer({ antialias: true });
   render.setPixelRatio(devicePixelRatio);
   el.appendChild(render.domElement);
@@ -607,27 +842,81 @@ if (window.THREE) {
     bryla.position.y = -0.85; g.add(bryla);
     const nos = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.3), new THREE.MeshStandardMaterial({ color: 0xffffff }));
     nos.position.set(0, -0.3, 0.28); g.add(nos);                       // bialy "nos" = przod nogi
-    const staw = new THREE.Mesh(new THREE.SphereGeometry(0.17, 16, 12), new THREE.MeshStandardMaterial({ color: 0x888888 }));
-    g.add(staw);
+    g.add(new THREE.Mesh(new THREE.SphereGeometry(0.17, 16, 12), new THREE.MeshStandardMaterial({ color: 0x888888 })));
     return g;
   };
   const mU = segment(0x4a90d9); mU.position.y = 1.5; scena.add(mU);
   const mG = segment(0xe07b00); mG.position.y = -1.7; mU.add(mG);
+  const stopa = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.1, 0.55), new THREE.MeshStandardMaterial({ color: 0xb85f00 }));
+  stopa.position.set(0, -1.75, 0.12); mG.add(stopa);
+  // znaczniki czujnikow: BNO (ciemne plytki z zielona dioda) i FSR (krazki, kolor = nacisk)
+  const znacznikIMU = () => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.15, 0.06), new THREE.MeshStandardMaterial({ color: 0x2b2b2b }));
+    const led = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.02), new THREE.MeshBasicMaterial({ color: 0x66ff66 }));
+    led.position.set(0.07, 0.03, 0.04); m.add(led); m.position.z = 0.17; return m;
+  };
+  const znU = znacznikIMU(), znG = znacznikIMU(); mU.add(znU); mG.add(znG);
+  const pady = [0, 1, 2, 3].map(i => {
+    const p = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.03, 20), new THREE.MeshStandardMaterial({ color: 0x555555 }));
+    p.rotation.x = Math.PI / 2; p.position.set(i % 2 ? 0.12 : -0.12, 0, 0.15); (i < 2 ? mU : mG).add(p); return p;
+  });
+  window.ustawMarkery3D = () => {
+    znU.position.y = -1.7 + poz.imuU * CM; znG.position.y = -poz.imuG * CM;
+    pady.forEach((p, i) => { p.position.y = i < 2 ? -1.7 + poz.f[i] * CM : -poz.f[i] * CM; });
+  };
+  window.ustawNaciskFsr3D = pct => pady.forEach((p, i) => {
+    const c = new THREE.Color(0x555555).lerp(new THREE.Color(FSR_KOLORY[i]), pct[i]);
+    p.material.color.copy(c); p.material.emissive.copy(c).multiplyScalar(0.6 * pct[i]);
+    p.scale.set(1 + 0.5 * pct[i], 1, 1 + 0.5 * pct[i]);
+  });
+  ustawMarkery3D();
   const siatka = new THREE.GridHelper(6, 12, 0x444444, 0x2a2a2a); siatka.position.y = -2.2; scena.add(siatka);
   const celU = new THREE.Quaternion(), celG = new THREE.Quaternion();
   // qU, qG = orientacje absolutne; goleni jest dzieckiem uda, wiec obracamy ja o orientacje wzgledna
   window.ustaw3D = (qU, qG) => { const l = qmul(qconj(qU), qG); celU.set(qU[1], qU[2], qU[3], qU[0]); celG.set(l[1], l[2], l[3], l[0]); };
-  window.model3D = { udo: mU, golen: mG };
-  window.zmienRozmiar3D = () => { const w = el.clientWidth || 300; render.setSize(w, 260); kamera.aspect = w / 260; kamera.updateProjectionMatrix(); };
+  window.model3D = { udo: mU, golen: mG, stopa, znacznikU: znU, znacznikG: znG, pady, kamera: kam };
+  window.zmienRozmiar3D = () => { const w = el.clientWidth || 300; render.setSize(w, 260); kam.aspect = w / 260; kam.updateProjectionMatrix(); ustawKamere(); };
   addEventListener('resize', zmienRozmiar3D);
+
+  // kotwica: biodro w miejscu albo stopa przypieta do podlogi (biodro sie porusza)
+  const vA = new THREE.Vector3(), vB = new THREE.Vector3(), qAbs = new THREE.Quaternion();
+  const zastosujKotwice = () => {
+    if (kotwica === 'stopa') {
+      vA.set(0, -1.7, 0).applyQuaternion(mU.quaternion);
+      qAbs.copy(mU.quaternion).multiply(mG.quaternion); vB.set(0, -1.7, 0).applyQuaternion(qAbs);
+      mU.position.set(0, -1.9, 0).sub(vA).sub(vB);
+    } else mU.position.set(0, 1.5, 0);
+  };
+
+  // obracanie widoku: przeciagniecie (mysz: oba kierunki, dotyk: poziomo, pionowo przewija strone), kolko / dwa palce = zoom
+  const cv = render.domElement; cv.style.touchAction = 'pan-y'; cv.style.cursor = 'grab';
+  const wsk = new Map(); let szczypanie = 0;
+  const odl = () => { const [a, b] = [...wsk.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
+  cv.addEventListener('pointerdown', e => { try { cv.setPointerCapture(e.pointerId); } catch (_) {} wsk.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (wsk.size === 2) szczypanie = odl(); });
+  cv.addEventListener('pointermove', e => {
+    const p = wsk.get(e.pointerId); if (!p) return;
+    const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
+    if (wsk.size === 1) { kamera3D.az -= dx * 0.01; if (e.pointerType !== 'touch') kamera3D.el = klamra(kamera3D.el + dy * 0.01, -0.35, 1.5); }
+    else if (wsk.size === 2) { const d = odl(); if (szczypanie > 0 && d > 0) kamera3D.dist = klamra(kamera3D.dist * szczypanie / d, 3, 14); szczypanie = d; }
+    ustawKamere();
+  });
+  const koniec = e => { if (wsk.delete(e.pointerId)) zapiszKamere(); };
+  cv.addEventListener('pointerup', koniec); cv.addEventListener('pointercancel', koniec);
+  cv.addEventListener('wheel', e => { e.preventDefault(); kamera3D.dist = klamra(kamera3D.dist * Math.exp(e.deltaY * 0.001), 3, 14); ustawKamere(); zapiszKamere(); }, { passive: false });
+  document.querySelectorAll('[data-widok]').forEach(b => b.onclick = () => { const w = WIDOKI[b.dataset.widok]; kamera3D.az = w.az; kamera3D.el = w.el; ustawKamere(); zapiszKamere(); });
+
+  ustawKamere();
   (function anim() {
     requestAnimationFrame(anim);
     mU.quaternion.slerp(celU, 0.35); mG.quaternion.slerp(celG, 0.35);
-    render.render(scena, kamera);
+    zastosujKotwice();
+    render.render(scena, kam);
   })();
 } else {
   $('scena').innerHTML = '<div class="male srodek" style="padding:40px 10px">wizualizacja 3D niedostepna (brak internetu)</div>';
 }
+
+odswiezKalUI(); odswiezFsrKalUI();   // stan poczatkowy paneli kalibracji
 </script>
 </body>
 </html>
